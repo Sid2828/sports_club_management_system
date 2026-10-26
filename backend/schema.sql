@@ -18,22 +18,11 @@ DROP TRIGGER IF EXISTS trg_equipment_checkout_decrement;
 DROP TRIGGER IF EXISTS trg_equipment_checkout_return;
 DROP TRIGGER IF EXISTS trg_maintenance_status_sync;
 
--- Drop tables in dependency order
-DROP TABLE IF EXISTS payments;
-DROP TABLE IF EXISTS equipment_checkouts;
-DROP TABLE IF EXISTS venue_bookings;
-DROP TABLE IF EXISTS maintenance_operations;
-DROP TABLE IF EXISTS equipment;
-DROP TABLE IF EXISTS venues;
-DROP TABLE IF EXISTS subscriptions;
-DROP TABLE IF EXISTS membership_plans;
-DROP TABLE IF EXISTS users;
-
 -- =====================================================================
 -- 1. USERS & ROLES
 -- Roles: 'non_member', 'member', 'admin'
 -- =====================================================================
-CREATE TABLE users (
+CREATE TABLE IF NOT exists users (
     user_id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     username VARCHAR(80) NOT NULL UNIQUE,
@@ -72,7 +61,7 @@ CREATE TABLE membership_plans (
 -- =====================================================================
 -- 3. USER SUBSCRIPTIONS
 -- =====================================================================
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT exists subscriptions (
     subscription_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     plan_id INT NOT NULL,
@@ -90,7 +79,7 @@ CREATE TABLE subscriptions (
 -- =====================================================================
 -- 4. VENUES & FACILITIES
 -- =====================================================================
-CREATE TABLE venues (
+CREATE TABLE IF NOT exists venues (
     venue_id VARCHAR(20) PRIMARY KEY,
     venue_name VARCHAR(100) NOT NULL,
     venue_type VARCHAR(50) NOT NULL,
@@ -107,7 +96,7 @@ CREATE TABLE venues (
 -- =====================================================================
 -- 5. VENUE BOOKINGS
 -- =====================================================================
-CREATE TABLE venue_bookings (
+CREATE TABLE IF NOT exists venue_bookings (
     booking_id INT AUTO_INCREMENT PRIMARY KEY,
     venue_id VARCHAR(20) NOT NULL,
     user_id INT NOT NULL,
@@ -127,7 +116,7 @@ CREATE TABLE venue_bookings (
 -- =====================================================================
 -- 6. EQUIPMENT & INVENTORY
 -- =====================================================================
-CREATE TABLE equipment (
+CREATE TABLE IF NOT exists equipment (
     asset_id VARCHAR(20) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     category VARCHAR(50) NOT NULL,
@@ -143,7 +132,7 @@ CREATE TABLE equipment (
 -- =====================================================================
 -- 7. EQUIPMENT CHECKOUTS / ISSUES
 -- =====================================================================
-CREATE TABLE equipment_checkouts (
+CREATE TABLE IF NOT exists equipment_checkouts (
     checkout_id INT AUTO_INCREMENT PRIMARY KEY,
     asset_id VARCHAR(20) NOT NULL,
     user_id INT NOT NULL,
@@ -165,7 +154,7 @@ CREATE TABLE equipment_checkouts (
 -- =====================================================================
 -- 8. MAINTENANCE OPERATIONS
 -- =====================================================================
-CREATE TABLE maintenance_operations (
+CREATE TABLE IF NOT exists maintenance_operations (
     operation_id INT AUTO_INCREMENT PRIMARY KEY,
     target_type ENUM('venue', 'equipment') NOT NULL,
     target_id VARCHAR(50) NOT NULL,
@@ -184,7 +173,7 @@ CREATE TABLE maintenance_operations (
 -- =====================================================================
 -- 9. PAYMENTS & TRANSACTIONS
 -- =====================================================================
-CREATE TABLE payments (
+CREATE TABLE IF NOT exists payments (
     payment_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     booking_id INT DEFAULT NULL,
@@ -377,7 +366,7 @@ DELIMITER ;
 -- =====================================================================
 
 -- 1. Insert Membership Plans
-INSERT INTO membership_plans (plan_code, plan_name, monthly_fee, yearly_fee, equipment_discount_percent, venue_discount_percent, description, benefits)
+INSERT IGNORE INTO membership_plans (plan_code, plan_name, monthly_fee, yearly_fee, equipment_discount_percent, venue_discount_percent, description, benefits)
 VALUES
 ('PLAN_GOLD', 'Gold', 2000.00, 20000.00, 30.00, 10.00, 
  'Premium club membership offering 30% off equipment rentals and 10% off venue bookings.',
@@ -388,28 +377,23 @@ VALUES
 
 -- 2. Insert Users (Admin, Members, Non-Members)
 -- Password for all mock users is 'password123' (bcrypt hash)
-INSERT INTO users (user_id, name, username, email, phone, password_hash, role, wallet_balance, is_delinquent)
+INSERT IGNORE INTO users (user_id, name, username, email, phone, password_hash, role, wallet_balance, is_delinquent)
 VALUES
 (1, 'Dana Lopez', 'Dana Lopez', 'dana.admin@arenaone.club', '+91 9888877771', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'admin', 5000.00, FALSE),
 (2, 'Aarav Mehta', 'Aarav Mehta', 'aarav.mehta@clubmail.com', '+91 9820011223', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'member', 2450.00, FALSE),
 (3, 'Priya Sharma', 'Priya Sharma', 'priya.sharma@clubmail.com', '+91 9811122334', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'member', 5100.00, FALSE),
 (4, 'Rohan Kapoor', 'Rohan Kapoor', 'rohan.kapoor@clubmail.com', '+91 9899988776', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'member', 180.00, TRUE),
-(5, 'Suresh Kumar', 'Suresh Kumar', 'suresh.guest@gmail.com', '+91 9777766665', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'non_member', 0.00, FALSE),
-(6, 'Facility Admin', 'admin', 'admin@clubmail.com', '+91 9888877770', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'admin', 5000.00, FALSE),
-(7, 'Active Member', 'member', 'member@clubmail.com', '+91 9820011220', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'member', 2000.00, FALSE),
-(8, 'Monal Pingale', 'monal', 'pingalemonal5@gmail.com', '+91 9820011229', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'member', 2500.00, FALSE);
+(5, 'Suresh Kumar', 'Suresh Kumar', 'suresh.guest@gmail.com', '+91 9777766665', '$2b$10$w8k7r5D1J8c0eYF1wVjIje2b3sF9h6HqQZgY7hA3yWpXzQZgY7hA3', 'non_member', 0.00, FALSE);
 
 -- 3. Insert Subscriptions
-INSERT INTO subscriptions (subscription_id, user_id, plan_id, billing_cycle, amount_paid, start_date, end_date, status)
+INSERT IGNORE INTO subscriptions (subscription_id, user_id, plan_id, billing_cycle, amount_paid, start_date, end_date, status)
 VALUES
 (1, 2, 1, 'monthly', 2000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 20 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 10 DAY), 'Active'),
 (2, 3, 2, 'yearly', 30000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 305 DAY), 'Active'),
-(3, 4, 1, 'monthly', 2000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 35 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), 'Expired'),
-(4, 7, 1, 'monthly', 2000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 20 DAY), 'Active'),
-(5, 8, 1, 'monthly', 2000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 25 DAY), 'Active');
+(3, 4, 1, 'monthly', 2000.00, DATE_SUB(CURRENT_DATE(), INTERVAL 35 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), 'Expired');
 
 -- 4. Insert Venues
-INSERT INTO venues (venue_id, venue_name, venue_type, base_hourly_fee, parent_venue_id, sports, status)
+INSERT IGNORE INTO venues (venue_id, venue_name, venue_type, base_hourly_fee, parent_venue_id, sports, status)
 VALUES
 ('V1', 'Main Multi-Sport Arena', 'Hall', 800.00, NULL, '["Badminton", "Basketball"]', 'Available'),
 ('V2', 'Badminton Court 1', 'Court', 300.00, 'V1', '["Badminton"]', 'Available'),
@@ -421,7 +405,7 @@ VALUES
 ('V8', 'Cricket Practice Nets', 'Nets', 400.00, 'V7', '["Cricket"]', 'Available');
 
 -- 5. Insert Equipment
-INSERT INTO equipment (asset_id, name, category, total_quantity, available_quantity, daily_price, status)
+INSERT IGNORE INTO equipment (asset_id, name, category, total_quantity, available_quantity, daily_price, status)
 VALUES
 ('EQ-201', 'Yonex Astrox 88D Pro Racquet', 'Racquets', 24, 17, 150.00, 'Available'),
 ('EQ-202', 'Head Cyber Pro Squash Racquet', 'Racquets', 10, 0, 120.00, 'In Use'),
@@ -432,21 +416,17 @@ VALUES
 ('EQ-610', 'Speedo Ergonomic Kickboard', 'Aquatics', 30, 26, 40.00, 'Available');
 
 -- 6. Insert Equipment Checkouts
-INSERT INTO equipment_checkouts (checkout_id, asset_id, user_id, issue_date, due_date, return_date, daily_rate, discount_percent, late_fee, status)
+INSERT IGNORE INTO  equipment_checkouts (checkout_id, asset_id, user_id, issue_date, due_date, return_date, daily_rate, discount_percent, late_fee, status)
 VALUES
 (1, 'EQ-202', 2, DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 3 DAY), NULL, 84.00, 30.00, 300.00, 'Overdue'),
 (2, 'EQ-201', 3, DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), DATE_ADD(CURRENT_DATE(), INTERVAL 2 DAY), NULL, 75.00, 50.00, 0.00, 'Active'),
 (3, 'EQ-420', 2, DATE_SUB(CURRENT_DATE(), INTERVAL 10 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), DATE_SUB(CURRENT_DATE(), INTERVAL 5 DAY), 315.00, 30.00, 0.00, 'Returned');
 
 -- 7. Insert Venue Bookings
-INSERT INTO venue_bookings (booking_id, venue_id, user_id, start_time, end_time, base_rate, discount_amount, total_cost, status)
-VALUES
-(1, 'V2', 2, CONCAT(CURRENT_DATE(), ' 09:00:00'), CONCAT(CURRENT_DATE(), ' 11:00:00'), 600.00, 60.00, 540.00, 'Confirmed'),
-(2, 'V5', 3, CONCAT(CURRENT_DATE(), ' 07:00:00'), CONCAT(CURRENT_DATE(), ' 08:00:00'), 600.00, 120.00, 480.00, 'Confirmed'),
-(3, 'V6', 2, CONCAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), ' 17:00:00'), CONCAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY), ' 19:00:00'), 1000.00, 100.00, 900.00, 'Completed');
+
 
 -- 8. Insert Maintenance Operations
-INSERT INTO maintenance_operations (operation_id, target_type, target_id, description, priority, request_status, scheduled_date, technician_notes)
+INSERT IGNORE INTO maintenance_operations (operation_id, target_type, target_id, description, priority, request_status, scheduled_date, technician_notes)
 VALUES
 (1, 'venue', 'V4', 'Front squash wall plaster line crack repair and repainting.', 'High', 'In Progress', DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY), 'Contractor on site; plaster setting.'),
 (2, 'equipment', 'EQ-501', 'Ball feeder motor calibration and battery replacement.', 'Medium', 'Pending', CURRENT_DATE(), 'Awaiting replacement motor gear.'),
