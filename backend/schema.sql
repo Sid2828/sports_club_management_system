@@ -316,7 +316,7 @@ FOR EACH ROW
 BEGIN
     -- Decrement available stock
     UPDATE equipment
-    SET available_quantity = available_quantity - 1,
+    SET available_quantity = GREATEST(0, available_quantity - 1),
         status = CASE 
             WHEN (available_quantity - 1) <= 0 THEN 'In Use' 
             ELSE status 

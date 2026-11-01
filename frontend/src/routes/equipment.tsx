@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -47,10 +47,14 @@ interface NewEquipmentForm {
 
 export function EquipmentPage() {
   const s = useStore();
+  const navigate = useNavigate();
   const isAdmin = s.role === "admin";
   const isMember = s.role === "member";
   const isNonMember = s.role === "non_member";
   const layout = roleLayout(s.role);
+
+  const currentMember = s.members.find((m) => m.member_id === s.currentMemberId);
+  const walletBalance = currentMember ? Number(currentMember.wallet_balance || 0) : 0;
 
   const today = new Date().toISOString().slice(0, 10);
   const defaultDue = new Date(Date.now() + 3 * 86_400_000)
@@ -146,7 +150,7 @@ export function EquipmentPage() {
   // Admin checkout
   const onCheckoutSubmit = handleSubmit((f) => {
     if (isNonMember) {
-      s.triggerUpgradeModal("Equipment Checkout");
+      void navigate({ to: "/plans" });
       return;
     }
 
@@ -240,8 +244,28 @@ export function EquipmentPage() {
     setEditingPriceItem(null);
   };
 
+  // Calculations for borrow duration and cost
+  const borrowDays = borrowItem
+    ? Math.max(
+        1,
+        Math.round(
+          (new Date(borrowDueDate).getTime() - new Date(borrowIssueDate).getTime()) /
+            (1000 * 60 * 60 * 24)
+        )
+      )
+    : 1;
+
+  const effectiveBorrowDaily = borrowItem
+    ? discountPercent > 0
+      ? Math.round(borrowItem.daily_price * (1 - discountPercent / 100))
+      : borrowItem.daily_price
+    : 0;
+
+  const totalBorrowCost = effectiveBorrowDaily * borrowDays;
+  const insufficientFunds = isMember && walletBalance < totalBorrowCost;
+
   // Member borrow confirmation
-  const handleMemberBorrowConfirm = () => {
+  const handleMemberBorrowConfirm = async () => {
     if (!borrowItem) return;
 
     if (borrowDueDate < borrowIssueDate) {
@@ -250,32 +274,36 @@ export function EquipmentPage() {
     }
 
     if (
-      borrowItem.available_quantity <= 0 ||
+      Math.max(0, borrowItem.available_quantity) <= 0 ||
       borrowItem.status === "Under Maintenance"
     ) {
       toast.error(`${borrowItem.name} is currently out of stock.`);
       return;
     }
 
-    void s
-      .checkout({
-        asset_id: borrowItem.asset_id,
-        member_id: s.currentMemberId,
-        issue_date: borrowIssueDate,
-        due_date: borrowDueDate,
-      })
-      .then((result) => {
-        if (!result.ok) {
-          toast.error(result.message);
-          return;
-        }
+    if (insufficientFunds) {
+      toast.error(
+        `Insufficient wallet balance. Required: ${money(totalBorrowCost)}, Balance: ${money(walletBalance)}. Please top up your wallet.`
+      );
+      return;
+    }
 
-        toast.success(`Successfully borrowed ${borrowItem.name}!`, {
-          description: `Due on ${borrowDueDate}. Added to your active gear.`,
-        });
-      });
+    const result = await s.checkout({
+      asset_id: borrowItem.asset_id,
+      member_id: s.currentMemberId,
+      issue_date: borrowIssueDate,
+      due_date: borrowDueDate,
+    });
 
-    // FIX: Removed the extra }); that caused the syntax error.
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+
+    toast.success(`Successfully borrowed ${borrowItem.name}!`, {
+      description: `${money(totalBorrowCost)} deducted from wallet (${borrowDays} day${borrowDays > 1 ? "s" : ""}). Due on ${borrowDueDate}.`,
+    });
+
     setBorrowItem(null);
   };
 
@@ -303,11 +331,13 @@ export function EquipmentPage() {
 
         {isNonMember && (
           <Button
-            onClick={() => s.triggerUpgradeModal("Equipment Checkout")}
+            asChild
             className="bg-amber-500 hover:bg-amber-600 text-amber-950 font-semibold gap-1.5"
           >
-            <Sparkles className="size-4" />
-            Unlock Equipment Loans
+            <Link to="/plans">
+              <Sparkles className="size-4" />
+              Unlock Equipment Loans
+            </Link>
           </Button>
         )}
       </PageHeader>
@@ -519,7 +549,7 @@ export function EquipmentPage() {
                       </TableCell>
 
                       <TableCell className="text-right tabular-nums">
-                        {e.available_quantity} / {e.total_quantity}
+                        {Math.max(0, e.available_quantity)} / {e.total_quantity}
                       </TableCell>
 
                       <TableCell>
@@ -564,19 +594,19 @@ export function EquipmentPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              asChild
                               className="text-xs h-7 border-amber-300 hover:bg-amber-100"
-                              onClick={() =>
-                                s.triggerUpgradeModal("Equipment Checkout")
-                              }
                             >
-                              Borrow
+                              <Link to="/plans">
+                                Borrow
+                              </Link>
                             </Button>
                           ) : (
                             <Button
                               size="sm"
                               className="text-xs h-7"
                               disabled={
-                                e.available_quantity <= 0 ||
+                                Math.max(0, e.available_quantity) <= 0 ||
                                 e.status === "Under Maintenance"
                               }
                               onClick={() => {
@@ -633,7 +663,7 @@ export function EquipmentPage() {
                   <NativeSelect {...register("asset_id")}>
                     {s.equipment.map((e) => (
                       <option key={e.asset_id} value={e.asset_id}>
-                        {e.asset_id} · {e.name} ({e.available_quantity}{" "}
+                        {e.asset_id} · {e.name} ({Math.max(0, e.available_quantity)}{" "}
                         available)
                       </option>
                     ))}
@@ -813,15 +843,7 @@ export function EquipmentPage() {
                   <span>Effective Daily Rate:</span>
 
                   <span className="text-emerald-700">
-                    {money(
-                      discountPercent > 0
-                        ? Math.round(
-                            borrowItem.daily_price *
-                              (1 - discountPercent / 100)
-                          )
-                        : borrowItem.daily_price
-                    )}
-                    /day
+                    {money(effectiveBorrowDaily)}/day
                   </span>
                 </div>
               </div>
@@ -848,6 +870,41 @@ export function EquipmentPage() {
                 </div>
               </div>
 
+              {/* Loan Breakdown & Member Wallet Status */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Loan Duration:</span>
+                  <span className="font-medium text-foreground">
+                    {borrowDays} day{borrowDays > 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Total Rental Charge:</span>
+                  <span className="text-foreground">{money(totalBorrowCost)}</span>
+                </div>
+                <div className="flex justify-between border-t border-primary/10 pt-1.5">
+                  <span className="text-muted-foreground">Your Wallet Balance:</span>
+                  <span className={insufficientFunds ? "text-destructive font-semibold" : "font-medium"}>
+                    {money(walletBalance)}
+                  </span>
+                </div>
+                {!insufficientFunds && (
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>Balance After Loan:</span>
+                    <span>{money(walletBalance - totalBorrowCost)}</span>
+                  </div>
+                )}
+              </div>
+
+              {insufficientFunds && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
+                  <p className="font-semibold">Insufficient Wallet Balance</p>
+                  <p className="text-[11px]">
+                    Required: {money(totalBorrowCost)} · Available: {money(walletBalance)}. Please top up your wallet before borrowing.
+                  </p>
+                </div>
+              )}
+
               <p className="text-[11px] text-muted-foreground">
                 <strong>Late Fine Policy:</strong> 5% of base equipment price (
                 {money(Math.round(borrowItem.daily_price * 0.05))}) per day
@@ -864,8 +921,14 @@ export function EquipmentPage() {
               Cancel
             </Button>
 
-            <Button onClick={handleMemberBorrowConfirm}>
-              Confirm & Borrow
+            <Button
+              onClick={handleMemberBorrowConfirm}
+              disabled={insufficientFunds}
+              className={insufficientFunds ? "opacity-50 cursor-not-allowed" : ""}
+            >
+              {insufficientFunds
+                ? "Insufficient Wallet Balance"
+                : `Confirm & Borrow (${money(totalBorrowCost)})`}
             </Button>
           </DialogFooter>
         </DialogContent>
