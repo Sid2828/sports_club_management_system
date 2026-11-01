@@ -33,7 +33,7 @@ router.get('/', async (req, res, next) => {
         name: e.name,
         category: e.category,
         total_quantity: Number(e.total_quantity) || 0,
-        available_quantity: Number(e.available_quantity) || 0,
+        available_quantity: Math.max(0, Number(e.available_quantity) || 0),
         daily_price: baseDaily,
         status: e.status,
         discount_percent: discountPercent,
@@ -159,7 +159,7 @@ router.put('/:id', requireRole('admin'), async (req, res, next) => {
     const params = [];
     if (daily_price !== undefined) { updates.push('daily_price = ?'); params.push(Number(daily_price)); }
     if (total_quantity !== undefined) { updates.push('total_quantity = ?'); params.push(Number(total_quantity)); }
-    if (available_quantity !== undefined) { updates.push('available_quantity = ?'); params.push(Number(available_quantity)); }
+    if (available_quantity !== undefined) { updates.push('available_quantity = ?'); params.push(Math.max(0, Number(available_quantity))); }
     if (status) { updates.push('status = ?'); params.push(status); }
     if (name) { updates.push('name = ?'); params.push(name); }
 
@@ -195,7 +195,7 @@ router.delete('/:id', requireRole('admin'), async (req, res, next) => {
   }
 });
 
-// 7. Checkout Gear: fires TRIGGER trg_equipment_checkout_decrement in MySQL
+// 7. Checkout Gear: checks wallet, deducts funds, records payment, and decrements equipment stock
 router.post('/checkout', blockNonMembers, async (req, res, next) => {
   try {
     const { asset_id, member_id, issue_date, due_date } = req.body;
@@ -226,18 +226,66 @@ router.post('/checkout', blockNonMembers, async (req, res, next) => {
     const effectiveRate = Math.round(Number(eq.daily_price) * (1 - discountPercent / 100));
     const todayStr = new Date().toISOString().slice(0, 10);
     const defaultDue = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const startStr = issue_date || todayStr;
+    const endStr = due_date || defaultDue;
+    const startMs = new Date(startStr).getTime();
+    const endMs = new Date(endStr).getTime();
+    const days = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)));
+    const totalCost = Math.max(0, effectiveRate * days);
 
-    // Inserting into equipment_checkouts automatically executes MySQL TRIGGER trg_equipment_checkout_decrement
-    const insertResult = await db.query(
-      'INSERT INTO equipment_checkouts (asset_id, user_id, issue_date, due_date, return_date, daily_rate, discount_percent, late_fee, status) VALUES (?, ?, ?, ?, NULL, ?, ?, 0, ?)',
-      [asset_id, targetUserId, issue_date || todayStr, due_date || defaultDue, effectiveRate, discountPercent, 'Active']
-    );
+    // Ensure member has sufficient wallet balance
+    const userRows = await db.query('SELECT wallet_balance FROM users WHERE user_id = ?', [targetUserId]);
+    if (!userRows || userRows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const user = userRows[0];
+    const balance = Number(user.wallet_balance || 0);
 
-    res.status(201).json({
-      message: `Checked out ${eq.name} successfully!`,
-      checkout_id: insertResult.insertId,
-      daily_rate: effectiveRate
-    });
+    if (balance < totalCost) {
+      return res.status(400).json({
+        error: 'InsufficientFunds',
+        message: `Insufficient wallet balance. Required: ₹${totalCost}, Available: ₹${balance}. Please top up your wallet.`
+      });
+    }
+
+    // Deduct rental money from member wallet
+    let walletDeducted = false;
+    if (totalCost > 0) {
+      await db.query('UPDATE users SET wallet_balance = wallet_balance - ? WHERE user_id = ?', [totalCost, targetUserId]);
+      walletDeducted = true;
+    }
+
+    try {
+      // Inserting into equipment_checkouts automatically executes MySQL TRIGGER trg_equipment_checkout_decrement
+      const insertResult = await db.query(
+        'INSERT INTO equipment_checkouts (asset_id, user_id, issue_date, due_date, return_date, daily_rate, discount_percent, late_fee, status) VALUES (?, ?, ?, ?, NULL, ?, ?, 0, ?)',
+        [asset_id, targetUserId, startStr, endStr, effectiveRate, discountPercent, 'Active']
+      );
+
+      // Record transaction in payments table
+      if (totalCost > 0) {
+        await db.query(
+          `INSERT INTO payments (user_id, checkout_id, amount, payment_method, payment_status) 
+           VALUES (?, ?, ?, 'Wallet', 'Paid')`,
+          [targetUserId, insertResult.insertId, totalCost]
+        );
+      }
+
+      res.status(201).json({
+        message: `Checked out ${eq.name} successfully!`,
+        checkout_id: insertResult.insertId,
+        daily_rate: effectiveRate,
+        total_cost: totalCost,
+        amount_charged: totalCost,
+        days
+      });
+    } catch (insertErr) {
+      // Revert wallet deduction if checkout insertion fails
+      if (walletDeducted) {
+        await db.query('UPDATE users SET wallet_balance = wallet_balance + ? WHERE user_id = ?', [totalCost, targetUserId]);
+      }
+      throw insertErr;
+    }
   } catch (err) {
     next(err);
   }

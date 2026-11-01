@@ -168,7 +168,15 @@ function useStoreState() {
         }))
       );
     }
-    if (equipmentRes.ok) setEquipment(equipmentRes.data.equipment || []);
+    if (equipmentRes.ok) {
+      setEquipment(
+        (equipmentRes.data.equipment || []).map((e) => ({
+          ...e,
+          available_quantity: Math.max(0, Number(e.available_quantity) || 0),
+          total_quantity: Math.max(0, Number(e.total_quantity) || 0),
+        }))
+      );
+    }
     if (membersRes.ok) setMembers(membersRes.data.members || []);
     if (bookingsRes.ok) setBookings(bookingsRes.data.bookings || []);
     if (issuesRes.ok) {

@@ -324,7 +324,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 )}
                 {role === "non_member" && (
                   <DropdownMenuItem asChild>
-                    <Link to="/other/plans" className="cursor-pointer text-amber-800 font-medium">
+                    <Link to="/plans" className="cursor-pointer text-amber-800 font-medium">
                       <Sparkles className="size-4 mr-2 text-amber-600" />
                       Upgrade to Membership
                     </Link>

@@ -382,7 +382,7 @@ export async function initDatabase() {
           FOR EACH ROW
           BEGIN
               UPDATE equipment
-              SET available_quantity = available_quantity - 1,
+              SET available_quantity = GREATEST(0, available_quantity - 1),
                   status = CASE 
                       WHEN (available_quantity - 1) <= 0 THEN 'In Use' 
                       ELSE status 
@@ -576,6 +576,7 @@ export async function initDatabase() {
       );
 
       console.log('Real MySQL database connected, initialized with tables, views, triggers, and seed accounts.');
+      await conn.query('UPDATE equipment SET available_quantity = GREATEST(0, available_quantity)');
       isInitialized = true;
     } finally {
       conn.release();

@@ -48,7 +48,7 @@ export function DashboardView() {
   const layout = roleLayout(s.role);
   const today = new Date().toISOString().slice(0, 10);
   const total = s.equipment.reduce((a, e) => a + e.total_quantity, 0);
-  const avail = s.equipment.reduce((a, e) => a + e.available_quantity, 0);
+  const avail = s.equipment.reduce((a, e) => a + Math.max(0, e.available_quantity), 0);
   const q = s.searchQuery.trim().toLowerCase();
 
   const stats = [
